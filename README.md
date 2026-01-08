@@ -1,6 +1,6 @@
 # TAS Addon (Sir Fallen)
 
-A minimal TAS playback addon for Godot 4.x. Drop this `addons/tas` folder into the project, add `res://addons/tas/tas_manager.gd` as an Autoload singleton, and place a `SirFallen.tas` file in `res://tas/` or `user://tas/` (preferred).
+A minimal TAS playback addon for Godot 4.x. Drop this `addons/tas` folder into the project, add `res://addons/tas/src/tas_manager.gd` as an Autoload singleton, and place a `SirFallen.tas` file in `res://tas/` or `user://tas/` (preferred).
 
 ## Controls (default, physical keys)
 - F6: toggle TAS on/off
@@ -31,7 +31,7 @@ Example:
 ```
 
 ## Integration points
-1) Autoload: add `res://addons/tas/tas_manager.gd`.
+1) Autoload: add `res://addons/tas/src/tas_manager.gd`.
 2) Player input shim: change the player to read from `TASManager` when `enabled` instead of `Input`. Example:
 ```gdscript
 var tas := TASManager
@@ -45,3 +45,4 @@ func get_input_axis():
 ## Known limitations
 - Speedup uses multiple physics ticks per frame but does not change Engine time scale; heavy scenes may still be bound by performance.
 - Snapshot fields are minimal; if you see divergence after step-back, add missing fields/timers in `tas_snapshot.gd`.
+
