@@ -42,7 +42,6 @@ func get_input_axis():
 ```
 3) Snapshots: `tas_snapshot.gd` captures position/velocity/timers from `player.gd`. Extend it if more state is needed for deterministic rewind.
 
-## Known limitations
-- Speedup uses multiple physics ticks per frame but does not change Engine time scale; heavy scenes may still be bound by performance.
-- Snapshot fields are minimal; if you see divergence after step-back, add missing fields/timers in `tas_snapshot.gd`.
+## License
+MIT License. See LICENSE for details.
 
