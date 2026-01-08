@@ -1,4 +1,4 @@
-# TAS Addon (Sir Fallen)
+# Sir Fallen TAS
 
 A minimal TAS playback addon for Godot 4.x. Drop this `addons/tas` folder into the project, add `res://addons/tas/src/tas_manager.gd` as an Autoload singleton, and place a `SirFallen.tas` file in `res://tas/` or `user://tas/` (preferred).
 
