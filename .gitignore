@@ -1,0 +1,12 @@
+*.gd.uid
+
+bin/
+build/
+dist/
+exports/
+
+*.log
+
+.DS_Store
+
+.vscode/
