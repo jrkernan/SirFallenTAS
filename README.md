@@ -40,7 +40,8 @@ func get_input_axis():
         return tas.get_axis(TASInputRecord.Actions.LEFT, TASInputRecord.Actions.RIGHT)
     return Input.get_axis("left", "right")
 ```
-(Eventually I plan to attach a 'Player.gd' file to this repo that can be dropped in instead of requiring manual edits)
+ (Eventually I plan to attach a 'Player.gd' file to this repo that can be dropped in instead of requiring manual edits)
+
 3) Snapshots: `tas_snapshot.gd` captures position/velocity/timers from `player.gd`.
 
 ## License
