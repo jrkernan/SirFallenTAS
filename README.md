@@ -6,7 +6,7 @@ A Tool Assisted Speedrun (TAS) playback/recording addon for [Sir Fallen](https:/
 
 ## Integration
 
-**1. Drop the files in**: Create a folder in `res://addons` called `tas`. Copy the `src/` folder here.
+1. Create a folder in `res://addons` called `tas`. Copy the `src/` folder here.
 
 ```
 res://addons/tas/
@@ -19,10 +19,10 @@ res://addons/tas/
   .gitignore
 ```
 
-**2. Autoload**: add the TASManager as an autoload singleton. In Project -> Project Settings -> Globals -> Autoload set the path to: `res://addons/tas/src/tas_manager.gd` and the name to: `TASManager`.
+2. Add the TASManager as an autoload singleton. In Project -> Project Settings -> Globals -> Autoload set the path to: `res://addons/tas/src/tas_manager.gd` and the name to: `TASManager`.
 
 
-**3. File replacement**: Four of the original Sir Fallen source files were modified. Download the modified versions [here](https://drive.google.com/file/d/1FU3-pXjoDws_D8qfmLkovz8TExvqXzAj/view?usp=sharing) and replace them inside the project. 
+3. Four of the original Sir Fallen source files were modified. Download the modified versions [here](https://drive.google.com/file/d/1FU3-pXjoDws_D8qfmLkovz8TExvqXzAj/view?usp=sharing) and replace them inside the project. 
 
 
 ## Controls (default keyboard keys)
@@ -100,11 +100,11 @@ TAS files can be edited manually but they are automatically created and edited w
 
 ## Implementation notes
 
-**Max horizontal velocity display**: In addition to the TAS overlay, the TAS manager also displays a constant overlay for the current max horizontal velocity. This is because bhops and ground coyote jumps increase the max horizontal velocity by different amounts depending on which frame you jump. This overlay allows the user to get visual feedback for frame-perfect inputs.
+- In addition to the TAS overlay, the TAS manager also displays a constant overlay for the current max horizontal velocity. This is because bhops and ground coyote jumps increase the max horizontal velocity by different amounts depending on which frame you jump. This overlay allows the user to get visual feedback for frame-perfect inputs.
 
-**Step-back buffer**: The `,` key can only step back up to 600 frames. Snapshots older than that are dropped to save on memory. Loading a save state clears the buffer completely, so you can't step back past a save state.
+- The `,` key can only step back up to 600 frames. Snapshots older than that are dropped to save on memory. Loading a save state clears the buffer completely, so you can't step back past a save state.
 
-**Movie file writes**: The `.tas` file is written to disk when you switch to playback, stop recording (**R**), disable TAS (**T**) or quit the game. It is not written every frame.
+- The `.tas` file is written to disk when you switch to playback, stop recording (**R**), disable TAS (**T**) or quit the game. It is not written every frame.
 
 ## Known limitations
 
