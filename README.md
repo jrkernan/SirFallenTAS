@@ -19,7 +19,7 @@ res://addons/tas/
   .gitignore
 ```
 
-**2. Autoload**: add the TASManager as an autoload singleton. In Project -> Project Settings -> Globals -> Autoload set the path to: `res://addons/tas/src/tas_manager.gd` and the name to: TASManager.
+**2. Autoload**: add the TASManager as an autoload singleton. In Project -> Project Settings -> Globals -> Autoload set the path to: `res://addons/tas/src/tas_manager.gd` and the name to: `TASManager`.
 
 
 **3. File replacement**: Four of the original Sir Fallen source files were modified. Download the modified versions [here](https://drive.google.com/file/d/1FU3-pXjoDws_D8qfmLkovz8TExvqXzAj/view?usp=sharing) and replace them inside the project. 
@@ -53,7 +53,7 @@ Press **R** to start recording from the current position. Frame-step is on by de
 Press **O** to toggle play/pause for the recording. When the TAS is initially enabled, starts playback from frame 0. When already in playback, pauses or resumes at the current frame. **Shift+O** always restarts playback from frame 0 regardless of current state.
 
 ### Resuming a session
-To continue from where you left off: press **O** to play through the existing run (use **=** to increase speed if necessary), then press **R** when you reach the point you want to record from. If you begin the recording before the end of the file, you will erase all of the frames that have been written beyond the current frame.
+To continue from where you left off: press **O** to play through the existing run (use **=** to increase speed if necessary) or use save states to jump around, then press **R** when you reach the point you want to record from. If you begin the recording before the end of the file, you will erase all of the frames that have been written beyond the current frame.
 
 ## File structure
 
