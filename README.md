@@ -109,7 +109,6 @@ TAS files can be edited manually but they are automatically created and edited w
 ## Known limitations
 
 - Coyote jumps off of moving platforms are prone to desync between recording and playback (specifically when using them to gain large amounts of speed). There isn't a known fix yet.
-- Alternate player modes (like April Fools mode) are not supported for TASing.
 
 ## License
 
