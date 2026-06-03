@@ -298,6 +298,7 @@ func _step_back() -> void:
 	_apply_platforms(snap)
 	_apply_level(snap)
 	if _paused_by_tas and GlobalTimer != null:
+		_prev_timer_on = snap.global_timer_on
 		GlobalTimer.timer_on = false
 
 	if mode == TASMode.PLAYBACK:
@@ -678,6 +679,7 @@ func _load_state(slot: int) -> void:
 	_apply_platforms(snap)
 	_apply_level(snap)
 	if _paused_by_tas and GlobalTimer != null:
+		_prev_timer_on = snap.global_timer_on
 		GlobalTimer.timer_on = false
 	snapshots.clear()
 	_snapshot_frames.clear()
