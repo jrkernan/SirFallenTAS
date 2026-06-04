@@ -302,17 +302,17 @@ func _step_back() -> void:
 		GlobalTimer.timer_on = false
 
 	if mode == TASMode.PLAYBACK:
-		controller.reload_playback_at(frame_number)
+		controller.reload_playback_at(frame_number + 1)
 		current_frame = controller.current_frame
 		if controller.current != null:
 			status_text = "Line %d (%d)" % [controller.current.line_number, controller.current_frame]
 	elif mode == TASMode.RECORD:
-		current_frame = frame_number
+		current_frame = frame_number + 1
 		_trim_record_frames(current_frame)
 		movie_length = record_frames.size()
 		status_text = "Rec Frame %d" % current_frame
 	else:
-		current_frame = frame_number
+		current_frame = frame_number + 1
 		status_text = "Frame %d" % current_frame
 
 	_update_overlay()
