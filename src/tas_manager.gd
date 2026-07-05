@@ -58,15 +58,21 @@ var _reload_called := false
 var _post_reset_resume := false     
 var _post_reset_idle := false       
 var _record_confirm_pending := false  # true = waiting for second R press to confirm file overwrite
-var _record_pending_trim := false     # true = first frame step after save state load must trim and invalidate
 var _current_state_slot: int = -1    
 var _camera_snap_pending := false   
 var _camera_smooth_reenable := false
 var _overlay: Label
-var _picker_label: Label
 var _black_overlay: ColorRect
 var _speed_overlay: Label
 var _fade_tween: Tween = null
+var _picker_root: ColorRect
+var _picker_scroll: ScrollContainer
+var _picker_list: VBoxContainer
+var _picker_hint: Label
+var _name_row: HBoxContainer
+var _name_edit: LineEdit
+var _naming_active := false
+var _picker_prev_paused := false
 
 func _ready():
 	process_priority = -100
@@ -160,16 +166,18 @@ func _physics_process(delta: float) -> void:
 
 func _process_frame_step() -> void:
 	if _step_unpause:
-		_record_confirm_pending = false
-		_tick()
 		_step_unpause = false
 		_pending_steps = max(0, _pending_steps - 1)
 		_pause_tree_for_frame_step()
 		_update_overlay()
 		return
 	if _pending_steps > 0:
-		_step_unpause = true
-		_resume_tree_from_frame_step()
+
+		_record_confirm_pending = false
+		_tick()
+		if _pending_steps > 0:
+			_resume_tree_from_frame_step()
+			_step_unpause = true
 		_update_overlay()
 		return
 	# Nothing queued. Re-pause in case something external unpaused the tree (e.g. respawn sequence) between the last tick+pause frame and now
@@ -212,19 +220,6 @@ func _tick() -> void:
 		_last_actions = current_actions.duplicate()
 		_capture_snapshot()
 		_fire_event_driven_actions()
-		if _record_pending_trim:
-			_record_pending_trim = false
-			_current_state_slot = -1
-			_trim_record_frames(current_frame)
-			movie_length = record_frames.size()
-			var slots_changed := false
-			for i in range(save_slots.size()):
-				if save_slots[i] != null and save_slots[i]["frame"] > current_frame:
-					save_slots[i] = null
-					slots_changed = true
-			if slots_changed:
-				_write_states_file()
-				_update_overlay()
 		_record_frame(live_actions)
 		if _current_state_slot >= 0:
 			status_text = "Rec Frame %d (State %d)" % [current_frame, _current_state_slot + 1]
@@ -238,7 +233,7 @@ func _tick() -> void:
 			_write_movie_file()
 
 func _fire_event_driven_actions() -> void:
-	# Some game systems (e.g. interactions) use _input(event) rather than polling.
+	# Some game systems use _input(event) rather than polling.
 	# Synthetic events ensure those handlers see the correct pressed state, which
 	# _input() alone cannot because it fires before _physics_process sets current_pressed.
 	# The paired release event resets Godot's internal action state so the next press
@@ -261,15 +256,12 @@ func _fire_event_driven_actions() -> void:
 		ev_off.action = "pause"
 		ev_off.pressed = false
 		Input.parse_input_event(ev_off)
-	if current_pressed.size() > TASInputRecord.Actions.RESET_PLATFORMS and current_pressed[TASInputRecord.Actions.RESET_PLATFORMS]:
-		var ev_on := InputEventAction.new()
-		ev_on.action = "reset_platforms"
-		ev_on.pressed = true
-		Input.parse_input_event(ev_on)
-		var ev_off := InputEventAction.new()
-		ev_off.action = "reset_platforms"
-		ev_off.pressed = false
-		Input.parse_input_event(ev_off)
+	# reset_platforms is intentionally NOT synthesized here: parse_input_event is
+	# buffered and flushes once per rendered frame, so at playback speeds above 1x
+	# the event can land several physics ticks late, and during recording the real
+	# key event could reset the platform one tick earlier than the synthetic one.
+	# The moving platform scripts poll TASManager.get_pressed() in _physics_process
+	# instead, which is frame-exact in both record and playback.
 
 func _capture_snapshot() -> void:
 	var p = _get_player()
@@ -286,10 +278,8 @@ func _capture_snapshot() -> void:
 	_snapshot_frames.append(current_frame)
 
 func _step_back() -> void:
-	if snapshots.size() < 2:
+	if snapshots.is_empty():
 		return
-	snapshots.pop_back()
-	_snapshot_frames.pop_back()
 	var snap: TASSnapshot = snapshots.pop_back()
 	var frame_number: int = _snapshot_frames.pop_back()
 	var p = _get_player()
@@ -302,63 +292,121 @@ func _step_back() -> void:
 		GlobalTimer.timer_on = false
 
 	if mode == TASMode.PLAYBACK:
-		controller.reload_playback_at(frame_number + 1)
+		controller.reload_playback_at(frame_number)
 		current_frame = controller.current_frame
 		if controller.current != null:
 			status_text = "Line %d (%d)" % [controller.current.line_number, controller.current_frame]
 	elif mode == TASMode.RECORD:
-		current_frame = frame_number + 1
+		current_frame = frame_number
 		_trim_record_frames(current_frame)
 		movie_length = record_frames.size()
 		status_text = "Rec Frame %d" % current_frame
 	else:
-		current_frame = frame_number + 1
+		current_frame = frame_number
 		status_text = "Frame %d" % current_frame
 
 	_update_overlay()
-	snapshots.append(snap)
-	_snapshot_frames.append(frame_number)
 	frame_step = true
 	speed = 1
 	_pending_steps = 0
 	_set_time_scale(1.0)
-	_last_actions = []
+	_last_actions = _reconstruct_last_actions(current_frame)
 	_pause_tree_for_frame_step()
 
 # --- Enable, Disable and Movie Picker ---
 
+func open_tas_menu() -> void:
+	# Entry point for the pause menu's TAS button. Same menu T opens while disabled.
+	if _picker_active:
+		return
+	if _get_player() == null:
+		return
+	if enabled:
+		_disable()
+	_show_picker(_list_movie_names())
+
 func _show_picker(names: Array[String]) -> void:
 	_picker_active = true
+	_naming_active = false
 	_picker_items = names.duplicate()
 	_picker_items.append(NEW_MOVIE_LABEL)
 	var idx = _picker_items.find(movie_base_name)
 	_picker_index = max(0, idx)
+	# Freeze the game while browsing/typing so keyboard input doesn't affect the player
+	_picker_prev_paused = get_tree().paused
+	get_tree().paused = true
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	_snapshot_key_states()
 	_update_picker_overlay()
 
 func _hide_picker() -> void:
-	_picker_active = false
+	if _naming_active:
+		_naming_active = false
+		_name_edit.release_focus()
+	if _picker_active:
+		_picker_active = false
+		get_tree().paused = _picker_prev_paused
+	_snapshot_key_states()
 	_update_picker_overlay()
 
 func _confirm_picker() -> void:
 	var selected = _picker_items[_picker_index]
-	_hide_picker()
 	if selected == NEW_MOVIE_LABEL:
-		_create_new_movie()
-	else:
-		_select_movie(selected)
-		_enable()
+		_begin_naming()
+		return
+	_hide_picker()
+	_select_movie(selected)
+	_enable()
 
-func _create_new_movie() -> void:
+func _begin_naming() -> void:
+	_naming_active = true
 	var now = Time.get_datetime_dict_from_system()
-	var base = "Run_%04d%02d%02d" % [now.year, now.month, now.day]
-	var name = base
+	_name_edit.text = ""
+	_name_edit.placeholder_text = "Run_%04d%02d%02d" % [now.year, now.month, now.day]
+	_name_edit.call_deferred("grab_focus")
+	_update_picker_overlay()
+
+func _cancel_naming() -> void:
+	_naming_active = false
+	_name_edit.release_focus()
+	_snapshot_key_states()
+	_update_picker_overlay()
+
+func _on_name_submitted(text: String) -> void:
+	if not _naming_active:
+		return
+	_naming_active = false
+	_name_edit.release_focus()
+	_hide_picker()
+	_create_new_movie(text)
+
+func _on_picker_item_pressed(idx: int) -> void:
+	if not _picker_active or _naming_active:
+		return
+	_picker_index = idx
+	_confirm_picker()
+
+func _sanitize_movie_name(raw: String) -> String:
+	var cleaned = raw.strip_edges()
+	for ch in ["\\", "/", ":", "*", "?", "\"", "<", ">", "|", "."]:
+		cleaned = cleaned.replace(ch, "")
+	return cleaned.strip_edges()
+
+func _unique_movie_name(base: String) -> String:
 	var existing = _list_movie_names()
+	var candidate = base
 	var counter := 2
-	while existing.has(name):
-		name = "%s_%d" % [base, counter]
+	while existing.has(candidate):
+		candidate = "%s_%d" % [base, counter]
 		counter += 1
-	_select_movie(name)
+	return candidate
+
+func _create_new_movie(raw_name: String = "") -> void:
+	var base = _sanitize_movie_name(raw_name)
+	if base == "":
+		var now = Time.get_datetime_dict_from_system()
+		base = "Run_%04d%02d%02d" % [now.year, now.month, now.day]
+	_select_movie(_unique_movie_name(base))
 	_ensure_movie_dir()
 	_enable()
 
@@ -540,7 +588,6 @@ func _start_playback() -> void:
 
 func _start_record() -> void:
 	_record_confirm_pending = false
-	_record_pending_trim = false
 	_autosave_counter = 0
 	_ensure_movie_dir()
 	movie_path = _movie_file_path()
@@ -570,7 +617,7 @@ func _start_record() -> void:
 	_pending_steps = 0
 	snapshots.clear()
 	_snapshot_frames.clear()
-	_last_actions = []
+	_last_actions = _reconstruct_last_actions(current_frame)
 	_pause_tree_for_frame_step()
 	status_text = "Recording"
 	# Only invalidate save state slots past the updated start frame
@@ -583,7 +630,6 @@ func _start_record() -> void:
 		_write_states_file()
 
 func _stop_record() -> void:
-	_record_pending_trim = false
 	_autosave_counter = 0
 	_write_movie_file()
 	mode = TASMode.IDLE
@@ -599,7 +645,6 @@ func _stop_record() -> void:
 
 func _stop_record_and_start_playback() -> void:
 	_record_confirm_pending = false
-	_record_pending_trim = false
 	_autosave_counter = 0
 	_write_movie_file()
 	controller.file_path = _movie_file_path()
@@ -614,12 +659,12 @@ func _stop_record_and_start_playback() -> void:
 	record_frames.clear()
 	snapshots.clear()
 	_snapshot_frames.clear()
-	_last_actions = []
 	frame_step = true
 	speed = 1
 	_pending_steps = 0
 	_pause_tree_for_frame_step()
 	mode = TASMode.PLAYBACK
+	_last_actions = _reconstruct_last_actions(current_frame)
 	if current_frame >= movie_length:
 		status_text = "Playback done. Press Shift+O to restart."
 	else:
@@ -693,7 +738,7 @@ func _load_state(slot: int) -> void:
 		speed = 1
 		_pending_steps = 0
 		_pause_tree_for_frame_step()
-		_last_actions = []
+		_last_actions = _reconstruct_last_actions(frame)
 		status_text = "State %d @ frame %d" % [slot + 1, frame]
 	else:
 		# RECORD: write recording, then switch to PLAYBACK at the save state frame.
@@ -706,15 +751,14 @@ func _load_state(slot: int) -> void:
 		controller.reload_playback_at(frame)
 		current_frame = controller.current_frame
 		record_frames.clear()
-		_record_pending_trim = false
 		_record_confirm_pending = false
 		_current_state_slot = slot
 		frame_step = true
 		speed = 1
 		_pending_steps = 0
 		_pause_tree_for_frame_step()
-		_last_actions = []
 		mode = TASMode.PLAYBACK
+		_last_actions = _reconstruct_last_actions(frame)
 		status_text = "State %d @ frame %d — Playback (R to record from here)" % [slot + 1, frame]
 	_update_overlay()
 
@@ -774,6 +818,24 @@ func _apply_platforms(snap: TASSnapshot) -> void:
 		var platform = get_node_or_null(path_str)
 		if platform != null:
 			platform.time = snap.platform_times[path_str]
+			if platform.has_method("get_pos") and platform is PhysicsBody2D:
+				# Commit the teleport through the physics server. A plain position set
+				# on a kinematic (AnimatableBody2D) body only writes its *pending*
+				# transform; while the tree is paused the server never integrates, so
+				# on the first tick after a load the server would derive the platform's
+				# velocity from wherever it was BEFORE the load — a garbage spike that
+				# gets added to a riding player via platform_on_leave and then locked
+				# into max_velocity by a coyote jump. Bouncing the body mode commits
+				# the transform and zeroes the derived velocity; the second position
+				# set clears the server's first-time-kinematic flag so the next real
+				# tick computes velocity as (next path pos - restored pos) / delta,
+				# exactly matching clean playback from frame 0.
+				var target: Vector2 = platform.get_pos(platform.time)
+				var rid: RID = platform.get_rid()
+				PhysicsServer2D.body_set_mode(rid, PhysicsServer2D.BODY_MODE_STATIC)
+				platform.global_position = target
+				PhysicsServer2D.body_set_mode(rid, PhysicsServer2D.BODY_MODE_KINEMATIC)
+				platform.global_position = target
 
 func _capture_level(snap: TASSnapshot) -> void:
 	var level = get_tree().current_scene
@@ -782,6 +844,11 @@ func _capture_level(snap: TASSnapshot) -> void:
 	if "spawn_point" in level:
 		snap.spawn_point = level.spawn_point
 	snap.active_checkpoint = str(level.active_checkpoint) if "active_checkpoint" in level and level.active_checkpoint != null else ""
+	if "run_start" in level:
+		snap.run_start = level.run_start
+	var start_zone = level.get_node_or_null("start_zone")
+	if start_zone != null and "started" in start_zone:
+		snap.start_zone_started = start_zone.started
 
 func _apply_level(snap: TASSnapshot) -> void:
 	var level = get_tree().current_scene
@@ -791,6 +858,11 @@ func _apply_level(snap: TASSnapshot) -> void:
 		level.spawn_point = snap.spawn_point
 	if "active_checkpoint" in level:
 		level.active_checkpoint = snap.active_checkpoint if snap.active_checkpoint != "" else null
+	if "run_start" in level:
+		level.run_start = snap.run_start
+	var start_zone = level.get_node_or_null("start_zone")
+	if start_zone != null and "started" in start_zone:
+		start_zone.started = snap.start_zone_started
 
 # --- Hotkeys ---
 
@@ -811,12 +883,17 @@ func _snapshot_key_states() -> void:
 func _update_hotkeys() -> void:
 	var shift_down = Input.is_physical_key_pressed(KEY_SHIFT)
 
+	if _naming_active:
+		if _just_pressed(KEY_ESCAPE):
+			_cancel_naming()
+		return
+
 	if _just_pressed(KEY_T):
 		if enabled:
 			_disable()
 		elif _picker_active:
 			_hide_picker()
-		else:
+		elif _get_player() != null:
 			_show_picker(_list_movie_names())
 		return
 
@@ -957,14 +1034,7 @@ func _create_overlay() -> void:
 	_overlay.position = Vector2(16, 16)
 	canvas.add_child(_overlay)
 
-	_picker_label = Label.new()
-	_picker_label.name = "TASPicker"
-	_picker_label.add_theme_color_override("font_color", Color.YELLOW)
-	_picker_label.add_theme_color_override("font_outline_color", Color.BLACK)
-	_picker_label.add_theme_constant_override("outline_size", 3)
-	_picker_label.visible = false
-	_picker_label.position = Vector2(120, 80)
-	canvas.add_child(_picker_label)
+	_create_picker_ui(canvas)
 
 	_black_overlay = ColorRect.new()
 	_black_overlay.name = "TASBlackOverlay"
@@ -1024,24 +1094,127 @@ func _update_overlay() -> void:
 			lines.append(status_text)
 	_overlay.text = "\n".join(lines)
 
+const MENU_THEME_PATH := "res://menus/menu_theme.tres"
+const PAUSE_BACKGROUND_PATH := "res://ui/pause_background.tscn"
+
+# Font colors copied from the pause/settings menu buttons
+const MENU_FONT_NORMAL := Color(1, 1, 1, 1)
+const MENU_FONT_HOVER := Color(0.52549, 0.52549, 0.52549, 1)
+const MENU_FONT_FOCUS := Color(0.454902, 0.454902, 0.454902, 1)
+const MENU_FONT_PRESSED := Color(0.87451, 0.87451, 0.87451, 1)
+const MENU_FONT_HOVER_PRESSED := Color(0.698039, 0.698039, 0.698039, 1)
+
+func _create_picker_ui(canvas: CanvasLayer) -> void:
+	# Full-screen menu page styled like the pause/settings menus: same theme
+	# (font), same black backdrop, same button color/outline conventions.
+	_picker_root = ColorRect.new()
+	_picker_root.name = "TASPickerRoot"
+	_picker_root.color = Color(0, 0, 0, 0.980392)  # pause_menu backdrop color
+	_picker_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_picker_root.visible = false
+	if ResourceLoader.exists(MENU_THEME_PATH):
+		_picker_root.theme = load(MENU_THEME_PATH)
+	canvas.add_child(_picker_root)
+
+	if ResourceLoader.exists(PAUSE_BACKGROUND_PATH):
+		var bg = load(PAUSE_BACKGROUND_PATH).instantiate()
+		_picker_root.add_child(bg)
+
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_picker_root.add_child(center)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 12)
+	center.add_child(vbox)
+
+	var title := Label.new()
+	title.text = "TAS Movies"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 48)
+	title.add_theme_color_override("font_outline_color", Color.BLACK)
+	title.add_theme_constant_override("outline_size", 12)
+	vbox.add_child(title)
+
+	_picker_scroll = ScrollContainer.new()
+	_picker_scroll.custom_minimum_size = Vector2(700, 480)
+	_picker_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	vbox.add_child(_picker_scroll)
+
+	_picker_list = VBoxContainer.new()
+	_picker_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_picker_list.add_theme_constant_override("separation", 12)
+	_picker_scroll.add_child(_picker_list)
+
+	_name_row = HBoxContainer.new()
+	_name_row.visible = false
+	var name_label := Label.new()
+	name_label.text = "Name: "
+	name_label.add_theme_font_size_override("font_size", 36)
+	name_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	name_label.add_theme_constant_override("outline_size", 12)
+	_name_row.add_child(name_label)
+	_name_edit = LineEdit.new()
+	_name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_name_edit.add_theme_font_size_override("font_size", 36)
+	_name_edit.max_length = 40
+	_name_edit.text_submitted.connect(_on_name_submitted)
+	_name_row.add_child(_name_edit)
+	vbox.add_child(_name_row)
+
+	_picker_hint = Label.new()
+	_picker_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_picker_hint.add_theme_font_size_override("font_size", 24)
+	_picker_hint.add_theme_color_override("font_color", MENU_FONT_HOVER_PRESSED)
+	_picker_hint.add_theme_color_override("font_outline_color", Color.BLACK)
+	_picker_hint.add_theme_constant_override("outline_size", 8)
+	vbox.add_child(_picker_hint)
+
+func _make_picker_button() -> Button:
+	var btn := Button.new()
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	btn.custom_minimum_size = Vector2(650, 60)
+	var empty := StyleBoxEmpty.new()
+	for state in ["normal", "hover", "pressed", "focus", "disabled"]:
+		btn.add_theme_stylebox_override(state, empty)
+	btn.add_theme_color_override("font_color", MENU_FONT_NORMAL)
+	btn.add_theme_color_override("font_hover_color", MENU_FONT_HOVER)
+	btn.add_theme_color_override("font_focus_color", MENU_FONT_FOCUS)
+	btn.add_theme_color_override("font_pressed_color", MENU_FONT_PRESSED)
+	btn.add_theme_color_override("font_hover_pressed_color", MENU_FONT_HOVER_PRESSED)
+	btn.add_theme_color_override("font_outline_color", Color.BLACK)
+	btn.add_theme_constant_override("outline_size", 12)
+	btn.add_theme_font_size_override("font_size", 36)
+	return btn
+
 func _update_picker_overlay() -> void:
-	if _picker_label == null:
+	if _picker_root == null:
 		return
-	_picker_label.visible = _picker_active
+	_picker_root.visible = _picker_active
 	_update_overlay()
 	if not _picker_active:
 		return
-	var lines: PackedStringArray = []
-	lines.append("=== SELECT MOVIE ===")
-	lines.append("")
+	# Sync one Button per list entry (movies + [ New Movie ])
+	while _picker_list.get_child_count() > _picker_items.size():
+		var extra = _picker_list.get_child(_picker_list.get_child_count() - 1)
+		_picker_list.remove_child(extra)
+		extra.queue_free()
+	while _picker_list.get_child_count() < _picker_items.size():
+		var btn := _make_picker_button()
+		btn.pressed.connect(_on_picker_item_pressed.bind(_picker_list.get_child_count()))
+		_picker_list.add_child(btn)
 	for i in range(_picker_items.size()):
-		if i == _picker_index:
-			lines.append("> " + _picker_items[i])
-		else:
-			lines.append("  " + _picker_items[i])
-	lines.append("")
-	lines.append("Up/Down: Navigate    Enter: Select    T/Esc: Cancel")
-	_picker_label.text = "\n".join(lines)
+		var btn: Button = _picker_list.get_child(i)
+		btn.text = ("> " if i == _picker_index else "  ") + _picker_items[i]
+		btn.add_theme_color_override("font_color", MENU_FONT_FOCUS if i == _picker_index else MENU_FONT_NORMAL)
+	_name_row.visible = _naming_active
+	if _naming_active:
+		_picker_hint.text = "Type a name, Enter to create (blank = %s)    Esc: back" % _name_edit.placeholder_text
+	else:
+		_picker_hint.text = "Up/Down + Enter or click to select    T/Esc: close"
+	if _picker_index < _picker_list.get_child_count():
+		_picker_scroll.call_deferred("ensure_control_visible", _picker_list.get_child(_picker_index))
 
 func _update_speed_overlay() -> void:
 	if _speed_overlay == null:
@@ -1123,6 +1296,21 @@ func _resume_tree_from_frame_step() -> void:
 		GlobalTimer.timer_on = _prev_timer_on
 
 # --- Calc pressed and released inputs ---
+
+func _reconstruct_last_actions(frame_number: int) -> Array[bool]:
+	# Rebuild the action state of the frame before frame_number so that, after a
+	# jump in time (save state load, step back, record/playback switch), keys held
+	# across the boundary don't re-register as just-pressed and releases landing
+	# exactly on the boundary frame aren't lost.
+	var empty: Array[bool] = []
+	if frame_number <= 0:
+		return empty
+	if mode == TASMode.RECORD:
+		if frame_number <= record_frames.size():
+			var acts: Array[bool] = record_frames[frame_number - 1]
+			return acts.duplicate()
+		return empty
+	return controller.actions_at(frame_number - 1)
 
 func _calc_pressed(current: Array[bool], previous: Array[bool]) -> Array[bool]:
 	if current.is_empty():

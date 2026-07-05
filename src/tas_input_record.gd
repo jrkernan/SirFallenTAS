@@ -62,7 +62,7 @@ func _read_int(text: String) -> int:
 		return 0
 	return num.to_int()
 
-func to_string() -> String:
+func _to_string() -> String:
 	if frames == 0:
 		return ""
 	var sb: PackedStringArray = []

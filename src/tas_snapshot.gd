@@ -25,6 +25,8 @@ var drop_through_platform: bool = true
 var platform_times: Dictionary = {}     # NodePath string -> time float for each moving platform
 var spawn_point: Vector2 = Vector2.ZERO
 var active_checkpoint: String = ""
+var run_start: bool = false
+var start_zone_started: bool = false
 var sprite_frame: int = 0
 var sprite_flip_h: bool = false
 var anim_name: String = ""
@@ -154,6 +156,8 @@ func to_dict() -> Dictionary:
 		"platform_times": platform_times,
 		"spawn_point": [spawn_point.x, spawn_point.y],
 		"active_checkpoint": active_checkpoint,
+		"run_start": run_start,
+		"start_zone_started": start_zone_started,
 		"sprite_frame": sprite_frame,
 		"sprite_flip_h": sprite_flip_h,
 		"anim_name": anim_name,
@@ -191,6 +195,8 @@ static func from_dict(data: Dictionary) -> TASSnapshot:
 		var sp = data["spawn_point"]
 		snap.spawn_point = Vector2(sp[0], sp[1])
 	snap.active_checkpoint = data.get("active_checkpoint", "")
+	snap.run_start = data.get("run_start", false)
+	snap.start_zone_started = data.get("start_zone_started", false)
 	snap.sprite_frame = data.get("sprite_frame", 0)
 	snap.sprite_flip_h = data.get("sprite_flip_h", false)
 	snap.anim_name = data.get("anim_name", "")

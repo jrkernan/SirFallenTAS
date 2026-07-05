@@ -54,6 +54,7 @@ func can_playback() -> bool:
 func playback_tick() -> void:
 	if not can_playback():
 		return
+	current_frame += 1
 	if current_frame >= frame_to_next:
 		if index + 1 >= records.size():
 			index += 1
@@ -62,7 +63,6 @@ func playback_tick() -> void:
 		index += 1
 		current = records[index]
 		frame_to_next += current.frames
-	current_frame += 1
 
 func reload_playback_at(frame_number: int) -> void:
 	initialize_playback()
@@ -72,6 +72,18 @@ func reload_playback_at(frame_number: int) -> void:
 		index += 1
 		current = records[index]
 		frame_to_next += current.frames
+
+func actions_at(frame_number: int) -> Array[bool]:
+	# Actions held on an absolute frame number, or empty if out of range
+	var empty: Array[bool] = []
+	if frame_number < 0:
+		return empty
+	var total := 0
+	for rec in records:
+		total += rec.frames
+		if frame_number < total:
+			return rec.actions.duplicate()
+	return empty
 
 func current_actions() -> Array[bool]:
 	if current == null:

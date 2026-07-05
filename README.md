@@ -29,7 +29,7 @@ res://addons/tas/
 
 | Key | Action |
 |-----|--------|
-| **T** | Toggle TAS. When off: opens movie picker to select/create a movie. When on: disables TAS. |
+| **T** | Toggle TAS. When off: opens the TAS menu to select/create a movie (also available in the pause menu). When on: disables TAS. |
 | **O** | Play / pause playback |
 | **Shift+O** | Reset playback to frame 0|
 | **=** / **-** | Speed up / slow down playback |
@@ -44,7 +44,7 @@ res://addons/tas/
 ## Usage
 
 ### Enable TAS
-Press **T** to open the movie picker. Select an existing movie or choose **[ New Movie ]** to create a new one (named `Run_YYYYMMDD`). Once a movie is selected, the level resets and you are placed at Frame 0.
+Press **T** (or open the pause menu and click **TAS**) to open the TAS menu. Movies are shown in a vertical list and can be selected using Up/Down + Enter or by clicking. Choose **[ New Movie ]** to create a new one: type a name and press Enter, or leave the field blank for a default name (`Run_YYYYMMDD`). Once a movie is selected, the level resets and you are placed at Frame 0.
 
 ### Recording
 Press **R** to start recording from the current position. Frame-step is on by default when the TAS gets enabled, press **K** to toggle it off for real-time recording. Before any new recording session starts, the existing movie is backed up to `backups/` with a timestamp. Press **R** again to stop and save progress.
@@ -109,6 +109,7 @@ TAS files can be edited manually but they are automatically created and edited w
 ## Known limitations
 
 - Coyote jumps off of moving platforms are prone to desync between recording and playback (specifically when using them to gain large amounts of speed). There isn't a known fix yet.
+- Deaths, respawns, and interacting with objects use real-time timers in the game code (they keep counting while frame-stepping), so the number of physics frames use is not deterministic. Try to avoid deaths and interactions to prevent desync
 
 ## License
 
